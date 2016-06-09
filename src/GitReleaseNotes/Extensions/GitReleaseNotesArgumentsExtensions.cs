@@ -50,7 +50,8 @@ namespace GitReleaseNotes
                         Password = arguments.IssueTrackerPassword,
                         Token = arguments.IssueTrackerToken
                     }
-                }
+                },
+                UseIssueTracker = arguments.UseIssueTracker
             };
         }
     }

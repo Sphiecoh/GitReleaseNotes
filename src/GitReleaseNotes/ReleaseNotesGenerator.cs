@@ -12,7 +12,7 @@ namespace GitReleaseNotes
     using GitReleaseNotes.FileSystem;
     using GitReleaseNotes.Git;
     using LibGit2Sharp;
-
+    using System.Text.RegularExpressions;
     public class ReleaseNotesGenerator
     {
         private static readonly ILog Log = GitReleaseNotesEnvironment.Log;
@@ -27,25 +27,7 @@ namespace GitReleaseNotes
         public async Task<SemanticReleaseNotes> GenerateReleaseNotesAsync(SemanticReleaseNotes releaseNotesToUpdate)
         {
             var gitRepository = new Repository(Repository.Discover(_generationParameters.WorkingDirectory));
-            IIssueTracker issueTracker;
-            if (_generationParameters.IssueTracker.Type.HasValue)
-            {
-                issueTracker = IssueTrackerFactory.CreateIssueTracker(new IssueTrackerSettings(_generationParameters.IssueTracker.Server,
-                        _generationParameters.IssueTracker.Type.Value)
-                    {
-                        Project = _generationParameters.IssueTracker.ProjectId,
-                        Authentication = _generationParameters.IssueTracker.Authentication.ToIssueTrackerSettings()
-                    });
-            }
-            else
-            {
-                if (!TryRemote(gitRepository, "upstream", _generationParameters, out issueTracker) &&
-                    !TryRemote(gitRepository, "origin", _generationParameters, out issueTracker))
-                {
-                    throw new Exception("Unable to guess issue tracker through remote, specify issue tracker type on the command line");
-                }
-            }
-
+            IIssueTracker issueTracker = null;
             var categories = new Categories(_generationParameters.Categories, _generationParameters.AllLabels);
             var tagToStartFrom = _generationParameters.AllTags
                 ? gitRepository.GetFirstCommit()
@@ -61,8 +43,32 @@ namespace GitReleaseNotes
                 currentReleaseInfo.Name = "vNext";
             }
 
-            var releaseNotes = await GenerateReleaseNotesAsync(
-                _generationParameters, gitRepository, issueTracker,
+            if (_generationParameters.UseIssueTracker)
+            {
+                
+                if (_generationParameters.IssueTracker.Type.HasValue)
+                {
+                    issueTracker = IssueTrackerFactory.CreateIssueTracker(new IssueTrackerSettings(_generationParameters.IssueTracker.Server,
+                            _generationParameters.IssueTracker.Type.Value)
+                    {
+                        Project = _generationParameters.IssueTracker.ProjectId,
+                        Authentication = _generationParameters.IssueTracker.Authentication.ToIssueTrackerSettings()
+                    });
+                }
+                else
+                {
+                    if (!TryRemote(gitRepository, "upstream", _generationParameters, out issueTracker) &&
+                        !TryRemote(gitRepository, "origin", _generationParameters, out issueTracker))
+                    {
+                        throw new Exception("Unable to guess issue tracker through remote, specify issue tracker type on the command line");
+                    }
+                }
+            }
+
+           
+            var releaseNotes = _generationParameters.UseIssueTracker ? await GenerateReleaseNotesAsync(_generationParameters,gitRepository,issueTracker,releaseNotesToUpdate,categories,tagToStartFrom,currentReleaseInfo) 
+                : await GenerateReleaseNotesAsync(
+                _generationParameters, gitRepository,
                 releaseNotesToUpdate, categories,
                 tagToStartFrom, currentReleaseInfo);
 
@@ -83,6 +89,52 @@ namespace GitReleaseNotes
                 context.IssueTracker.Authentication.ToIssueTrackerSettings(),
                 out issueTracker);
         }
+
+        public static Task<SemanticReleaseNotes> GenerateReleaseNotesAsync(ReleaseNotesGenerationParameters generationParameters,
+           IRepository gitRepo, SemanticReleaseNotes previousReleaseNotes,
+           Categories categories, TaggedCommit tagToStartFrom, ReleaseInfo currentReleaseInfo)
+        {
+            
+            var issuenumberregex = new Regex(@"#\s?(\d+)", RegexOptions.Compiled);
+            var semanticReleases = new Dictionary<string, SemanticRelease>();
+            var releases = ReleaseFinder.FindReleases(gitRepo, tagToStartFrom, currentReleaseInfo);
+            foreach (var release in releases)
+            {
+                
+                    if (!semanticReleases.ContainsKey(release.Name))
+                    {
+                        var beginningSha = release.FirstCommit != null ? release.FirstCommit.Substring(0, 10) : null;
+                        var endSha = release.LastCommit != null ? release.LastCommit.Substring(0, 10) : null;
+
+                        semanticReleases.Add(release.Name, new SemanticRelease(release.Name, release.When, new ReleaseDiffInfo
+                        {
+                            BeginningSha = beginningSha,
+                            EndSha = endSha,
+                            // TODO DiffUrlFormat = context.Repository.DiffUrlFormat
+                        }));
+                    }
+
+                    var semanticRelease = semanticReleases[release.Name];
+                    var commits = gitRepo.Commits.Where(x => x.Author.When >= release.PreviousReleaseDate && x.Author.When <= release.When);
+                    foreach (Commit commit in commits)
+                    {
+                        var match = issuenumberregex.Match(commit.Message);
+                        var releaseNoteItem = new ReleaseNoteItem(match.Success ? commit.Message.Replace(match.Groups[0].Value, "") :commit.Message, match.Success ? match.Groups[0].Value : string.Empty , match.Success? string.Format(generationParameters.IssueTracker.Server,match.Groups[0].Value): string.Empty,null,commit.Author.When,new[] { new Contributor(commit.Author.Name,commit.Author.Email,string.Empty) });
+
+                        semanticRelease.ReleaseNoteLines.Add(releaseNoteItem);
+                    }
+               
+
+            }
+            var semanticReleaseNotes = new SemanticReleaseNotes(semanticReleases.Values, categories);
+            var mergedReleaseNotes = semanticReleaseNotes.Merge(previousReleaseNotes);
+            return Task.FromResult(mergedReleaseNotes);
+        }
+
+        //private static string GetLink(string bugId)
+        //{
+        //    return string.Format(, bugId);
+        //}
 
         public static async Task<SemanticReleaseNotes> GenerateReleaseNotesAsync(ReleaseNotesGenerationParameters generationParameters,
             IRepository gitRepo, IIssueTracker issueTracker, SemanticReleaseNotes previousReleaseNotes,

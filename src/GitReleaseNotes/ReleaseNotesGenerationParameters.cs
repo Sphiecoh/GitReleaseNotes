@@ -20,5 +20,6 @@ namespace GitReleaseNotes
         public IssueTrackerParameters IssueTracker { get; private set; }
 
         public string WorkingDirectory { get; set; }
+        public bool UseIssueTracker { get; set; }
     }
 }

@@ -36,7 +36,7 @@ namespace GitReleaseNotes
         public string RepoBranch { get; set; }
 
         [Description("Issue tracker url")]
-        public string IssueTrackerUrl{ get; set; }
+        public string IssueTrackerUrl { get; set; }
 
         [Description("Issue tracker username")]
         public string IssueTrackerUsername { get; set; }
@@ -64,6 +64,8 @@ namespace GitReleaseNotes
 
         [Description("Specifies that all labels should be included in the release notes, if not specified then only the defaults (bug, enhancement, feature) are included.")]
         public bool AllLabels { get; set; }
+        [Description("Specifies that issue tracker should be used to include closed issues")]
+        public bool UseIssueTracker {get;set;}
 
     }
 }

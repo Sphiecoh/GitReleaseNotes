@@ -131,10 +131,7 @@ namespace GitReleaseNotes
             return Task.FromResult(mergedReleaseNotes);
         }
 
-        //private static string GetLink(string bugId)
-        //{
-        //    return string.Format(, bugId);
-        //}
+       
 
         public static async Task<SemanticReleaseNotes> GenerateReleaseNotesAsync(ReleaseNotesGenerationParameters generationParameters,
             IRepository gitRepo, IIssueTracker issueTracker, SemanticReleaseNotes previousReleaseNotes,
